@@ -134,6 +134,7 @@ extern crate httparse;
 extern crate num_cpus;
 extern crate traitobject;
 extern crate typeable;
+extern crate solicit;
 
 #[macro_use]
 extern crate log;
