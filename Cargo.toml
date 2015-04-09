@@ -25,6 +25,8 @@ url = "*"
 traitobject = "*"
 typeable = "*"
 
+[dependencies.solicit]
+git = "https://github.com/mlalic/solicit"
+
 [dev-dependencies]
 env_logger = "*"
-
