@@ -89,6 +89,17 @@ trait HttpRequestBoxFactory: Send {
     fn set_ssl_verifier(&mut self, verifier: ContextVerifier);
 }
 
+impl<Factory, Fresh> HttpRequestBoxFactory for Factory
+        where Factory: HttpRequestFactory<RequestType=Fresh>, Fresh: FreshHttpRequest + 'static,
+              <Fresh as FreshHttpRequest>::Streaming: 'static {
+    fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Box<FreshRequestBox + 'static>> {
+        Ok(Box::new(try!(self.get_fresh_request(template))))
+    }
+
+    fn set_ssl_verifier(&mut self, verifier: ContextVerifier) { self.set_ssl_verifier(verifier) }
+}
+
+
 /// A trait that represents the functionality of creating a brand new fresh
 /// request (an instance of a type implementing `FreshHttpRequest`).
 ///
@@ -160,7 +171,7 @@ impl HttpRequestFactory for Http11RequestFactory {
 ///
 /// Clients can handle things such as: redirect policy.
 pub struct Client {
-    factory: Http11RequestFactory,
+    factory: Box<HttpRequestBoxFactory>,
     redirect_policy: RedirectPolicy,
 }
 
@@ -168,15 +179,18 @@ impl Client {
 
     /// Create a new Client.
     pub fn new() -> Client {
-        Client::with_connector(HttpConnector(None))
+        Client::with_factory(Http11RequestFactory::new())
     }
 
-    /// Create a new client with a specific connector.
-    pub fn with_connector<C, S>(connector: C) -> Client
-    where C: NetworkConnector<Stream=S> + Send + 'static, S: NetworkStream + Send {
+    /// Create a new client that will use the given `HttpRequestFactory`
+    /// instance for creating requests that it will send to the server.
+    pub fn with_factory<F>(factory: F) -> Client
+            where F: HttpRequestFactory + 'static,
+                  <F as HttpRequestFactory>::RequestType: 'static,
+                  <<F as HttpRequestFactory>::RequestType as FreshHttpRequest>::Streaming: 'static {
         Client {
-            factory: Http11RequestFactory::with_connector(with_connector(connector)),
-            redirect_policy: Default::default()
+            factory: Box::new(factory),
+            redirect_policy: Default::default(),
         }
     }
 
@@ -326,7 +340,7 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
     }
 
     /// Execute this request and receive a Response back.
-    pub fn send(self) -> HttpResult<Response> {
+    pub fn send(self) -> HttpResult<HttpResponse> {
         let (mut template, client) = try!(self.into_template());
         debug!("client.request {:?} {:?}", template.method, template.url);
 
@@ -342,10 +356,10 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
                 (true, None) => req.headers_mut().set(ContentLength(0)),
                 _ => () // neither
             }
-            let mut streaming = try!(req.start());
+            let mut streaming = try!(req.start_box());
             template.body.take().map(|mut rdr| copy(&mut rdr, &mut streaming));
-            let res = try!(streaming.send());
-            if res.status.class() != Redirection {
+            let res = try!(streaming.send_box());
+            if res.status().class() != Redirection {
                 return Ok(res)
             }
             debug!("redirect code {:?} for {:?}", res.status, template.url);
@@ -539,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_redirect_followall() {
-        let mut client = Client::with_connector(MockRedirectPolicy);
+        let mut client = Client::with_factory(MockRedirectPolicy);
         client.set_redirect_policy(RedirectPolicy::FollowAll);
 
         let res = client.get("http://127.0.0.1").send().unwrap();
@@ -548,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_redirect_dontfollow() {
-        let mut client = Client::with_connector(MockRedirectPolicy);
+        let mut client = Client::with_factory(MockRedirectPolicy);
         client.set_redirect_policy(RedirectPolicy::FollowNone);
         let res = client.get("http://127.0.0.1").send().unwrap();
         assert_eq!(res.headers.get(), Some(&Server("mock1".to_string())));
@@ -559,7 +573,7 @@ mod tests {
         fn follow_if(url: &Url) -> bool {
             !url.serialize().contains("127.0.0.3")
         }
-        let mut client = Client::with_connector(MockRedirectPolicy);
+        let mut client = Client::with_factory(MockRedirectPolicy);
         client.set_redirect_policy(RedirectPolicy::FollowIf(follow_if));
         let res = client.get("http://127.0.0.1").send().unwrap();
         assert_eq!(res.headers.get(), Some(&Server("mock2".to_string())));
