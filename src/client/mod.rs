@@ -188,6 +188,35 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
         self
     }
 
+    /// Converts the `RequestBuilder` into a `RequestTemplate` that represents
+    /// all parts of the final request that should be sent and splits off the
+    /// `Client` reference that is used to actually send the request. This method
+    /// consumes the `RequestBuilder`.
+    fn into_template(self) -> HttpResult<(RequestTemplate<'a>, &'a mut Client)> {
+        let RequestBuilder { client, method, url, headers, body } = self;
+        let url = try!(url.into_url());
+        debug!("client.request {:?} {:?}", method, url);
+
+        let can_have_body = match &method {
+            &Method::Get | &Method::Head => false,
+            _ => true
+        };
+
+        let body = if can_have_body {
+            body.map(|b| b.into_body())
+        } else {
+             None
+        };
+
+        Ok((RequestTemplate {
+            url: url,
+            method: method,
+            body: body,
+            headers: headers,
+            can_have_body: can_have_body,
+        }, client))
+    }
+
     /// Execute this request and receive a Response back.
     pub fn send(self) -> HttpResult<Response> {
         let RequestBuilder { client, method, url, headers, body } = self;
