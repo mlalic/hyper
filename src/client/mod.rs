@@ -66,6 +66,13 @@ pub struct RequestTemplate<'a> {
 pub trait HttpRequestFactory {
     /// The type of the `FreshHttpRequest` that this factory will produce.
     type RequestType: FreshHttpRequest;
+    /// Creates a new instance of the particular `HttpRequestFactory`.
+    /// This method is a convenience so that the `Client` can still be
+    /// instantiated without providing a factory instance, but with a simple
+    /// `new()` call. This, however, means that all particular
+    /// `HttpRequestFactory` implementations must have a set of default
+    /// parameters with which they can be created.
+    fn new() -> Self;
     /// Creates a new `FreshHttpRequest` of the appropriate type given the
     /// `RequestTemplate` instance.
     fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Self::RequestType>;
@@ -92,6 +99,10 @@ impl Http11RequestFactory {
 
 impl HttpRequestFactory for Http11RequestFactory {
     type RequestType = Request<Fresh>;
+
+    fn new() -> Http11RequestFactory {
+        Http11RequestFactory::with_connector(with_connector(HttpConnector(None)))
+    }
 
     fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Request<Fresh>> {
         let req = try!(Request::with_connector(
