@@ -175,6 +175,7 @@ pub mod error;
 pub mod method;
 pub mod header;
 pub mod http;
+pub mod http2;
 pub mod net;
 pub mod server;
 pub mod status;
