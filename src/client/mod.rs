@@ -278,26 +278,14 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
 
     /// Execute this request and receive a Response back.
     pub fn send(self) -> HttpResult<Response> {
-        let RequestBuilder { client, method, url, headers, body } = self;
-        let mut url = try!(url.into_url());
-        debug!("client.request {:?} {:?}", method, url);
-
-        let can_have_body = match &method {
-            &Method::Get | &Method::Head => false,
-            _ => true
-        };
-
-        let mut body = if can_have_body {
-            body.map(|b| b.into_body())
-        } else {
-             None
-        };
+        let (mut template, client) = try!(self.into_template());
+        debug!("client.request {:?} {:?}", template.method, template.url);
 
         loop {
-            let mut req = try!(Request::with_connector(method.clone(), url.clone(), &mut client.connector));
-            headers.as_ref().map(|headers| req.headers_mut().extend(headers.iter()));
+            let mut req = try!(Request::with_connector(template.method.clone(), template.url.clone(), &mut client.connector));
+            template.headers.as_ref().map(|headers| req.headers_mut().extend(headers.iter()));
 
-            match (can_have_body, body.as_ref()) {
+            match (template.can_have_body, template.body.as_ref()) {
                 (true, Some(ref body)) => match body.size() {
                     Some(size) => req.headers_mut().set(ContentLength(size)),
                     None => (), // chunked, Request will add it automatically
@@ -306,18 +294,18 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
                 _ => () // neither
             }
             let mut streaming = try!(req.start());
-            body.take().map(|mut rdr| copy(&mut rdr, &mut streaming));
+            template.body.take().map(|mut rdr| copy(&mut rdr, &mut streaming));
             let res = try!(streaming.send());
             if res.status.class() != Redirection {
                 return Ok(res)
             }
-            debug!("redirect code {:?} for {:?}", res.status, url);
+            debug!("redirect code {:?} for {:?}", res.status, template.url);
 
             let loc = {
                 // punching borrowck here
                 let loc = match res.headers.get::<Location>() {
                     Some(&Location(ref loc)) => {
-                        Some(UrlParser::new().base_url(&url).parse(&loc[..]))
+                        Some(UrlParser::new().base_url(&template.url).parse(&loc[..]))
                     }
                     None => {
                         debug!("no Location header");
@@ -330,7 +318,7 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
                     None => return Ok(res)
                 }
             };
-            url = match loc {
+            let url = match loc {
                 Ok(u) => {
                     inspect!("Location", u)
                 },
@@ -345,6 +333,8 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
                 RedirectPolicy::FollowIf(cond) if cond(&url) => (), //continue
                 _ => return Ok(res),
             }
+            // Modify the request template to point at the new URL
+            template.url = url;
         }
     }
 }
