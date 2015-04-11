@@ -1,4 +1,5 @@
 //! Client Requests
+use std::convert::Into;
 use std::marker::PhantomData;
 use std::io::{self, Write, BufWriter};
 
@@ -216,6 +217,25 @@ impl Write for Request<Streaming> {
         self.body.flush()
     }
 }
+
+impl<W> HttpRequest for Request<W> {
+    fn headers(&self) -> &Headers { &self.headers }
+    fn method(&self) -> method::Method { self.method.clone() }
+}
+
+impl FreshHttpRequest for Request<Fresh> {
+    type Streaming = Request<Streaming>;
+    fn start(self) -> HttpResult<Request<Streaming>> { self.start() }
+    fn headers_mut(&mut self) -> &mut Headers { &mut self.headers }
+}
+
+impl StreamingHttpRequest for Request<Streaming> {
+    fn send(self) -> HttpResult<HttpResponse> {
+        let resp = try!(self.send());
+        Ok(resp.into())
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
