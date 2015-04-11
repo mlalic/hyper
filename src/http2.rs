@@ -19,7 +19,8 @@ use openssl::ssl::SslStream;
 
 use header::Headers;
 use method::Method;
-use net::{Fresh, Streaming};
+use net::{Fresh, Streaming, ContextVerifier};
+use client::{HttpRequestFactory, RequestTemplate};
 use client::request::{HttpRequest, FreshHttpRequest, StreamingHttpRequest};
 use client::response::HttpResponse;
 
@@ -86,6 +87,39 @@ impl Http2Client {
             &mut Http2Client::Http(ref mut client) => client.get_response(stream_id),
             &mut Http2Client::Https(ref mut client) => client.get_response(stream_id),
         }
+    }
+}
+
+/// A struct that creates new HTTP/2 requests, such that they can be used in
+/// `hyper`'s `Client` implementation.
+pub struct Http2RequestFactory;
+
+impl Http2RequestFactory {
+    /// Returns a new `Http2Client` that can be used by a request.
+    fn get_client(&mut self, url: &Url) -> Http2Client {
+        // TODO Return real errors without just unwrapping willy-nilly
+        Http2Client::new(&url.scheme, url.domain().unwrap())
+    }
+}
+
+impl HttpRequestFactory for Http2RequestFactory {
+    type RequestType = Http2Request<Fresh>;
+
+    fn new() -> Http2RequestFactory { Http2RequestFactory }
+
+    fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Http2Request<Fresh>> {
+        Ok(Http2Request {
+            client: self.get_client(&template.url),
+            headers: Headers::new(),
+            stream_id: None,
+            method: template.method.clone(),
+            url: template.url.clone(),
+            _marker: PhantomData,
+        })
+    }
+
+    fn set_ssl_verifier(&mut self, verifier: ContextVerifier) {
+        // TODO Don't ignore this...
     }
 }
 
