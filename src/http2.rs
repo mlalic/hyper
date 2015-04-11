@@ -127,6 +127,13 @@ impl Http2Request<Fresh> {
     }
 }
 
+impl Http2Request<Streaming> {
+    fn send(self) -> HttpResult<Http2Response> {
+        // NYI: Streaming out the body of the request in DATA frames...
+        Ok(Http2Response::new(self.client, self.stream_id.unwrap()))
+    }
+}
+
 /// A struct representing an HTTP/2 response adapted to fit into `hyper`'s
 /// interface. Supports the same operations that the original HTTP/1.x response
 /// did.
