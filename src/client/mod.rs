@@ -38,6 +38,16 @@ pub use self::response::Response;
 pub mod request;
 pub mod response;
 
+/// The struct represents parts of an HTTP request that are prepared for
+/// sending to the server.
+pub struct RequestTemplate<'a> {
+    pub url: Url,
+    pub method: Method,
+    pub body: Option<Body<'a>>,
+    pub headers: Option<Headers>,
+    pub can_have_body: bool,
+}
+
 /// A Client to use additional features with Requests.
 ///
 /// Clients can handle things such as: redirect policy.
