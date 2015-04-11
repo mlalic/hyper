@@ -476,6 +476,10 @@ fn get_host_and_port(url: &Url) -> HttpResult<(String, u16)> {
 mod tests {
     use header::Server;
     use super::{Client, RedirectPolicy};
+    use super::{HttpRequestFactory, RequestTemplate};
+    use super::request::Request;
+    use HttpResult;
+    use net::{Fresh, ContextVerifier};
     use url::Url;
 
     mock_connector!(MockRedirectPolicy {
