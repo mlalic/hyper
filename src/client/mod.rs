@@ -111,7 +111,7 @@ impl HttpRequestFactory for Http11RequestFactory {
 ///
 /// Clients can handle things such as: redirect policy.
 pub struct Client {
-    connector: Connector,
+    factory: Http11RequestFactory,
     redirect_policy: RedirectPolicy,
 }
 
@@ -126,14 +126,14 @@ impl Client {
     pub fn with_connector<C, S>(connector: C) -> Client
     where C: NetworkConnector<Stream=S> + Send + 'static, S: NetworkStream + Send {
         Client {
-            connector: with_connector(connector),
+            factory: Http11RequestFactory::with_connector(with_connector(connector)),
             redirect_policy: Default::default()
         }
     }
 
     /// Set the SSL verifier callback for use with OpenSSL.
     pub fn set_ssl_verifier(&mut self, verifier: ContextVerifier) {
-        self.connector = with_connector(HttpConnector(Some(verifier)));
+        self.factory.set_ssl_verifier(verifier);
     }
 
     /// Set the RedirectPolicy.
@@ -282,7 +282,7 @@ impl<'a, U: IntoUrl> RequestBuilder<'a, U> {
         debug!("client.request {:?} {:?}", template.method, template.url);
 
         loop {
-            let mut req = try!(Request::with_connector(template.method.clone(), template.url.clone(), &mut client.connector));
+            let mut req = try!(client.factory.get_fresh_request(&template));
             template.headers.as_ref().map(|headers| req.headers_mut().extend(headers.iter()));
 
             match (template.can_have_body, template.body.as_ref()) {
