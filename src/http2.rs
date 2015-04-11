@@ -2,6 +2,7 @@
 //! interfaces, such that it becomes possible to seamlessly plug them into
 //! `hyper::client::Client` and use it for HTTP communication.
 use std::io::Write;
+use std::io::Cursor;
 use std::net::TcpStream;
 use std::marker::PhantomData;
 
@@ -19,6 +20,7 @@ use header::Headers;
 use method::Method;
 use net::{Fresh, Streaming};
 
+use status;
 use HttpResult;
 
 /// A wrapper around `solicit`'s `SimpleClient` such that it hides away the
@@ -126,5 +128,57 @@ impl Http2Request<Fresh> {
             url: self.url,
             _marker: PhantomData,
         })
+    }
+}
+
+/// A struct representing an HTTP/2 response adapted to fit into `hyper`'s
+/// interface. Supports the same operations that the original HTTP/1.x response
+/// did.
+pub struct Http2Response {
+    client: Http2Client,
+    stream_id: StreamId,
+    pub headers: Headers,
+    pub status: status::StatusCode,
+    body: Cursor<Vec<u8>>,
+}
+
+impl Http2Response {
+    fn new(mut client: Http2Client, stream_id: StreamId) -> Http2Response {
+        // First, we get the HTTP/2 response, as provided by `solicit`
+        let resp = client.get_response(stream_id).unwrap();
+        // ...then the various chunks are stripped out and wrapped in a response
+        // that satisfies `hyper`'s interface.
+
+        // - The status code
+        let status = status::StatusCode::from_u16(resp.status_code().unwrap());
+
+        // - The headers
+        let mut headers = Headers::new();
+        // Headers are moved into `hyper`'s `Headers` collection; pseudo-headers
+        // are ignored (status has already been extracted).
+        // TODO: Coalesce possible headers with the name key into a single vector.
+        //       `solicit` returns the raw original header list and lets the clients
+        //       figure out how they would like to transform it.
+        for (name, value) in resp.headers.into_iter().filter(|header| header.0[0] != b':') {
+            // Unfortunately, `hyper` wants its header names to be strings...
+            // We just panic if it ends up being an invalid utf8 string, but no
+            // copies are made.
+            headers.set_raw(String::from_utf8(name).unwrap(), vec![value]);
+        }
+
+        // - The response body
+        // For now, since `solicit` has already read the full response, we just
+        // wrap it into a `Cursor` to allow for the public interface to support
+        // `io::Read`.
+        let body = Cursor::new(resp.body);
+
+        // Finally, we're done -- package them all up in a struct
+        Http2Response {
+            status: status,
+            client: client,
+            stream_id: stream_id,
+            headers: headers,
+            body: body,
+        }
     }
 }
