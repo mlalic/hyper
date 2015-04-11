@@ -109,6 +109,26 @@ macro_rules! mock_connector (
 
         }
 
+        impl HttpRequestFactory for $name {
+            type RequestType = Request<Fresh>;
+
+            fn new() -> $name {
+                $name
+            }
+
+            fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Request<Fresh>> {
+                let mut connector = $name;
+                let req = try!(Request::with_connector(
+                        template.method.clone(),
+                        template.url.clone(),
+                        &mut connector));
+
+                Ok(req)
+            }
+
+            fn set_ssl_verifier(&mut self, _verifier: ContextVerifier) { }
+        }
+
     )
 );
 
