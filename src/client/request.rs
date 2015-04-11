@@ -13,7 +13,52 @@ use http::HttpWriter::{ThroughWriter, ChunkedWriter, SizedWriter, EmptyWriter};
 use version;
 use HttpResult;
 use client::{Response, get_host_and_port};
+use client::response::HttpResponse;
 
+/// A trait that should be implemented for types that represent HTTP requests.
+pub trait HttpRequest {
+    /// Returns a reference to the headers associated to this request.
+    fn headers(&self) -> &Headers;
+    /// Returns the HTTP method of the request.
+    fn method(&self) -> method::Method;
+}
+
+/// A trait that should be implemented for types that represent a "Fresh" HTTP
+/// request.
+///
+/// A fresh request is one for which no part has been sent to the server yet.
+///
+/// This trait allows for customizing the request before it is sent. Along with
+/// that, once the request is started, it needs to return an appropriate
+/// instance of a `StreamingRequest`.
+pub trait FreshHttpRequest: HttpRequest {
+    /// The type of the `StreamingRequest` that is produced by this
+    /// `FreshHttpRequest`
+    type Streaming: StreamingHttpRequest;
+    /// Starts the request by consuming the instance and transforming it into
+    /// the appropriate `StreamingRequest`.
+    fn start(self) -> HttpResult<Self::Streaming>;
+
+    /// Returns a mutable reference to the `Headers` instance that will be sent
+    /// with the request.
+    fn headers_mut(&mut self) -> &mut Headers;
+}
+
+/// A trait that should be implemented for types that represent "Streaming"
+/// HTTP requests.
+///
+/// A streaming request is one that has already sent the headers to the server
+/// and is now writing the body of the request. Therefore, it requires that
+/// the `io::Write` trait also be implemented -- the writes represent sending a
+/// chunk of the request's body to the server.
+///
+/// The `send` method needs to flush the request body to the server and transform
+/// the insance to an appropriate `HttpResponse`.
+pub trait StreamingHttpRequest: HttpRequest + io::Write {
+    /// Flush the request body and produce an appropriate `HttpResponse` that
+    /// can be used for obtaining the response that the server eventually sends.
+    fn send(self) -> HttpResult<HttpResponse>;
+}
 
 /// A client request to a remote server.
 pub struct Request<W> {
