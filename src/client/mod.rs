@@ -33,6 +33,7 @@ use {Url, HttpResult};
 use HttpError::HttpUriError;
 
 use self::request::{FreshHttpRequest};
+use net::{Fresh};
 
 pub use self::request::Request;
 pub use self::response::Response;
@@ -73,6 +74,38 @@ pub trait HttpRequestFactory {
     fn set_ssl_verifier(&mut self, verifier: ContextVerifier);
 }
 
+/// A struct that represents the functionality of creating new HTTP/1.1
+/// requests.
+pub struct Http11RequestFactory {
+    /// The `Connector` instance used to establish a new connection to
+    /// servers.
+    connector: Connector,
+}
+
+impl Http11RequestFactory {
+    pub fn with_connector(c: Connector) -> Http11RequestFactory {
+        Http11RequestFactory {
+            connector: c,
+        }
+    }
+}
+
+impl HttpRequestFactory for Http11RequestFactory {
+    type RequestType = Request<Fresh>;
+
+    fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Request<Fresh>> {
+        let req = try!(Request::with_connector(
+                template.method.clone(),
+                template.url.clone(),
+                &mut self.connector));
+
+        Ok(req)
+    }
+
+    fn set_ssl_verifier(&mut self, verifier: ContextVerifier) {
+        self.connector = with_connector(HttpConnector(Some(verifier)));
+    }
+}
 
 /// A Client to use additional features with Requests.
 ///
@@ -161,7 +194,7 @@ impl<C: NetworkConnector<Stream=S> + Send, S: NetworkStream + Send> NetworkConne
     }
 }
 
-struct Connector(Box<NetworkConnector<Stream=Box<NetworkStream + Send>> + Send>);
+pub struct Connector(Box<NetworkConnector<Stream=Box<NetworkStream + Send>> + Send>);
 
 impl NetworkConnector for Connector {
     type Stream = Box<NetworkStream + Send>;
