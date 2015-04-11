@@ -1,6 +1,7 @@
 //! The module adapts the HTTP/2 abstractions provided by `solicit` in
 //! interfaces, such that it becomes possible to seamlessly plug them into
 //! `hyper::client::Client` and use it for HTTP communication.
+use std::io;
 use std::io::Write;
 use std::io::Cursor;
 use std::net::TcpStream;
@@ -19,6 +20,8 @@ use openssl::ssl::SslStream;
 use header::Headers;
 use method::Method;
 use net::{Fresh, Streaming};
+use client::request::{HttpRequest, FreshHttpRequest, StreamingHttpRequest};
+use client::response::HttpResponse;
 
 use status;
 use HttpResult;
@@ -98,6 +101,11 @@ pub struct Http2Request<W> {
     _marker: PhantomData<W>,
 }
 
+impl<W> HttpRequest for Http2Request<W> {
+    fn headers(&self) -> &Headers { &self.headers }
+    fn method(&self) -> Method { self.method.clone() }
+}
+
 impl Http2Request<Fresh> {
     fn start(mut self) -> HttpResult<Http2Request<Streaming>> {
         // Prepare the request metadata so that it fits into `solicit`'s API.
@@ -131,11 +139,43 @@ impl Http2Request<Fresh> {
     }
 }
 
+impl FreshHttpRequest for Http2Request<Fresh> {
+    type Streaming = Http2Request<Streaming>;
+    fn start(self) -> HttpResult<Http2Request<Streaming>> { self.start() }
+    fn headers_mut(&mut self) -> &mut Headers { &mut self.headers }
+}
+
 impl Http2Request<Streaming> {
     fn send(self) -> HttpResult<Http2Response> {
         // NYI: Streaming out the body of the request in DATA frames...
         Ok(Http2Response::new(self.client, self.stream_id.unwrap()))
     }
+}
+
+impl StreamingHttpRequest for Http2Request<Streaming> {
+    fn send(self) -> HttpResult<HttpResponse> {
+        let resp = try!(self.send());
+        Ok(HttpResponse {
+            headers: resp.headers,
+            status: resp.status,
+            body: Box::new(resp.body),
+        })
+    }
+}
+
+/// A fake implementation since writing bodies is not yet supported, but
+/// we need it to satisfy the interface.
+impl io::Write for Http2Request<Streaming> {
+    #[inline]
+    fn write(&mut self, msg: &[u8]) -> io::Result<usize> {
+        unimplemented!()
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+        unimplemented!()
+    }
+
 }
 
 /// A struct representing an HTTP/2 response adapted to fit into `hyper`'s
@@ -187,5 +227,12 @@ impl Http2Response {
             headers: headers,
             body: body,
         }
+    }
+}
+
+impl io::Read for Http2Response {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.body.read(buf)
     }
 }
