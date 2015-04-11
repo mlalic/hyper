@@ -32,6 +32,8 @@ use status::StatusClass::Redirection;
 use {Url, HttpResult};
 use HttpError::HttpUriError;
 
+use self::request::{FreshHttpRequest};
+
 pub use self::request::Request;
 pub use self::response::Response;
 
@@ -47,6 +49,30 @@ pub struct RequestTemplate<'a> {
     pub headers: Option<Headers>,
     pub can_have_body: bool,
 }
+
+/// A trait that represents the functionality of creating a brand new fresh
+/// request (an instance of a type implementing `FreshHttpRequest`).
+///
+/// Each particular implementation of the trait can provide a different way
+/// for achieving this, as well as a custom type of request that it produces.
+///
+/// Therefore, by defining the type of the fresh request that it will produce,
+/// it also directly defines the type of the response, since the chain of
+/// `Fresh -> Streaming -> Response` types is always well defined given a
+/// particular `FreshHttpRequest` starting point.
+///
+/// TODO: Might need a better name?
+pub trait HttpRequestFactory {
+    /// The type of the `FreshHttpRequest` that this factory will produce.
+    type RequestType: FreshHttpRequest;
+    /// Creates a new `FreshHttpRequest` of the appropriate type given the
+    /// `RequestTemplate` instance.
+    fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Self::RequestType>;
+    /// Set a `ContextVerifier` callback that should be called if the request
+    /// is an HTTPS request.
+    fn set_ssl_verifier(&mut self, verifier: ContextVerifier);
+}
+
 
 /// A Client to use additional features with Requests.
 ///
