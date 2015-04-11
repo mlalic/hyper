@@ -1,7 +1,9 @@
 //! The module adapts the HTTP/2 abstractions provided by `solicit` in
 //! interfaces, such that it becomes possible to seamlessly plug them into
 //! `hyper::client::Client` and use it for HTTP communication.
+use std::io::Write;
 use std::net::TcpStream;
+use std::marker::PhantomData;
 
 use solicit::http::StreamId;
 use solicit::http::HttpResult as Http2Result;
@@ -9,7 +11,15 @@ use solicit::http::Response as RawHttp2Response;
 use solicit::client::SimpleClient;
 use solicit::http::connection::{TlsConnector, CleartextConnector};
 
+use url::Url;
+
 use openssl::ssl::SslStream;
+
+use header::Headers;
+use method::Method;
+use net::{Fresh, Streaming};
+
+use HttpResult;
 
 /// A wrapper around `solicit`'s `SimpleClient` such that it hides away the
 /// details of which generic version it uses depending on whether it needs
@@ -71,5 +81,50 @@ impl Http2Client {
             &mut Http2Client::Http(ref mut client) => client.get_response(stream_id),
             &mut Http2Client::Https(ref mut client) => client.get_response(stream_id),
         }
+    }
+}
+
+/// A struct representing an HTTP/2-based request. Satisfies the same interface
+/// that `hyper::client::request::Request` does and allows for a similar
+/// transformation of `Fresh -> Streaming -> Response`
+pub struct Http2Request<W> {
+    client: Http2Client,
+    headers: Headers,
+    stream_id: Option<StreamId>,
+    method: Method,
+    url: Url,
+    _marker: PhantomData<W>,
+}
+
+impl Http2Request<Fresh> {
+    fn start(mut self) -> HttpResult<Http2Request<Streaming>> {
+        // Prepare the request metadata so that it fits into `solicit`'s API.
+        // It basically just adapts the method and path into byte slices.
+        let mut method_bytes: Vec<u8> = Vec::new();
+        write!(&mut method_bytes, "{}", self.method);
+
+        // TODO Refactor this to a helper function, as it is reused verbatim
+        //      from the HTTP/1.x code.
+        let path = {
+            let mut uri = self.url.serialize_path().unwrap();
+            if let Some(ref q) = self.url.query {
+                uri.push('?');
+                uri.push_str(&q[..]);
+            }
+            uri.into_bytes()
+        };
+
+        // Initiate a request and remember the corresponding HTTP/2 stream ID
+        // so that we can refer to it when we want to read the response.
+        let stream_id = self.client.request(&method_bytes, &path, &[]).unwrap();
+
+        Ok(Http2Request {
+            client: self.client,
+            headers: self.headers,
+            stream_id: Some(stream_id),
+            method: self.method,
+            url: self.url,
+            _marker: PhantomData,
+        })
     }
 }
