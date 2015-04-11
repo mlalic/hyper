@@ -13,6 +13,34 @@ use status;
 use version;
 use HttpResult;
 
+/// A trait that any type that should be considered a response to an HTTP
+/// request should implement.
+///
+/// The trait requires `io::Read` to be implemented for the type too. The read
+/// operations should correspond to reading the body of the response.
+pub struct HttpResponse {
+    /// The status from the server.
+    pub status: status::StatusCode,
+    /// The headers from the server.
+    pub headers: header::Headers,
+    /// The body of the response
+    pub body: Box<io::Read>,
+}
+
+impl HttpResponse {
+    /// Returns the headers of the response
+    pub fn headers(&self) -> &header::Headers { &self.headers }
+    /// Returns the status of the response
+    pub fn status(&self) -> status::StatusCode { self.status.clone() }
+}
+
+impl io::Read for HttpResponse {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.body.read(buf)
+    }
+}
+
 /// A response for a client request to a remote server.
 #[derive(Debug)]
 pub struct Response<S = HttpStream> {
