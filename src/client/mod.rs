@@ -83,6 +83,12 @@ impl<Stream> StreamingRequestBox for Stream
     }
 }
 
+trait HttpRequestBoxFactory: Send {
+    fn get_fresh_request(&mut self, template: &RequestTemplate) -> HttpResult<Box<FreshRequestBox + 'static>>;
+
+    fn set_ssl_verifier(&mut self, verifier: ContextVerifier);
+}
+
 /// A trait that represents the functionality of creating a brand new fresh
 /// request (an instance of a type implementing `FreshHttpRequest`).
 ///
@@ -95,7 +101,7 @@ impl<Stream> StreamingRequestBox for Stream
 /// particular `FreshHttpRequest` starting point.
 ///
 /// TODO: Might need a better name?
-pub trait HttpRequestFactory {
+pub trait HttpRequestFactory: Send {
     /// The type of the `FreshHttpRequest` that this factory will produce.
     type RequestType: FreshHttpRequest;
     /// Creates a new instance of the particular `HttpRequestFactory`.
