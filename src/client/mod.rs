@@ -32,7 +32,8 @@ use status::StatusClass::Redirection;
 use {Url, HttpResult};
 use HttpError::HttpUriError;
 
-use self::request::{FreshHttpRequest};
+use self::response::HttpResponse;
+use self::request::{FreshHttpRequest, StreamingHttpRequest};
 use net::{Fresh};
 
 pub use self::request::Request;
@@ -49,6 +50,37 @@ pub struct RequestTemplate<'a> {
     pub body: Option<Body<'a>>,
     pub headers: Option<Headers>,
     pub can_have_body: bool,
+}
+
+trait FreshRequestBox {
+    /// Starts the request by consuming the instance and transforming it into
+    /// the appropriate `StreamingRequest`.
+    fn start_box(self: Box<Self>) -> HttpResult<Box<StreamingRequestBox + 'static>>;
+    fn headers_mut(&mut self) -> &mut Headers;
+}
+
+impl<Fresh, Stream> FreshRequestBox for Fresh
+        where Fresh: FreshHttpRequest<Streaming=Stream>, Stream: StreamingHttpRequest + 'static {
+    fn start_box(self: Box<Self>) -> HttpResult<Box<StreamingRequestBox + 'static>> {
+        Ok(Box::new(try!(self.start())))
+    }
+
+    fn headers_mut(&mut self) -> &mut Headers {
+        self.headers_mut()
+    }
+}
+
+trait StreamingRequestBox: io::Write {
+    /// Flush the request body and produce an appropriate `HttpResponse` that
+    /// can be used for obtaining the response that the server eventually sends.
+    fn send_box(self: Box<Self>) -> HttpResult<HttpResponse>;
+}
+
+impl<Stream> StreamingRequestBox for Stream
+        where Stream: StreamingHttpRequest {
+    fn send_box(self: Box<Self>) -> HttpResult<HttpResponse> {
+        Ok(try!(self.send()))
+    }
 }
 
 /// A trait that represents the functionality of creating a brand new fresh
