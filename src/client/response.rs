@@ -1,5 +1,6 @@
 //! Client Responses
 use std::io::{self, Read};
+use std::convert::Into;
 use std::marker::PhantomData;
 
 use buffer::BufReader;
@@ -38,6 +39,16 @@ impl io::Read for HttpResponse {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.body.read(buf)
+    }
+}
+
+impl<S> Into<HttpResponse> for Response<S> {
+    fn into(self) -> HttpResponse {
+        HttpResponse {
+            status: self.status,
+            headers: self.headers,
+            body: Box::new(self.body),
+        }
     }
 }
 
